@@ -28,7 +28,10 @@ def get_pages_of_cat(category, categorymembers, dict_of_cats, level=0, max_level
 
 
 def find_articles(domains, max_level=2):
-    wiki = wikipediaapi.Wikipedia("en")
+    wiki = wikipediaapi.Wikipedia(
+        user_agent="wikipedia-histories (https://github.com/ndrezn/wikipedia-histories)",
+        language="en",
+    )
 
     dfs = []
     for domain in domains:

@@ -18,11 +18,11 @@ setuptools.setup(
     url="https://github.com/ndrezn/wikipedia-histories",
     install_requires=[
         "aiohttp>=3.8.0",
-        "lxml==4.9.1",
-        "mwclient==0.10.1",
-        "mwparserfromhell==0.6",
+        "lxml>=5.0.0",
+        "mwclient>=0.10.1",
+        "mwparserfromhell>=0.6",
         "pandas>=1.2.3",
-        "wikipedia-api==0.5.4",
+        "wikipedia-api>=0.6.0",
     ],
     package_dir={"": "src"},
     packages=find_packages("src"),
@@ -31,6 +31,6 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    extras_require={"networks": ["networkx>=2.6", "python-igraph==0.9.1"]},
+    extras_require={"networks": ["networkx>=2.6", "python-igraph>=0.9.1"]},
     python_requires=">=3.6",
 )
