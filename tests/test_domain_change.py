@@ -75,6 +75,7 @@ def test_to_df() -> None:
     ]
     df = wikipedia_histories.to_df(changes)
     assert len(df) == 1
+    assert list(df.columns) == ["title", "time", "revid", "kind", "user", "comment", "rating", "text"]
     assert df.iloc[0]["title"] == "Test"
     assert df.iloc[0]["user"] == "Alice"
     assert df.iloc[0]["text"] == "text"
