@@ -64,6 +64,22 @@ def get_comment(metadata):
     return comment
 
 
+def _get_revision_content(rev):
+    """
+    Extract content text from a revision, handling both old format and MCR (slots) format.
+    Parameters:
+        rev: revision dict from mwclient
+    Returns:
+        The wikitext content string, or None if not found
+    """
+    if "slots" in rev:
+        try:
+            return rev["slots"]["main"]["*"]
+        except (KeyError, TypeError):
+            pass
+    return rev.get("*")
+
+
 def get_ratings(talk):
     """
     Output classes of a page to a list (FA, good, etc.) given a talk page
@@ -88,8 +104,13 @@ def get_ratings(talk):
     i = 0
     for version in content:
         try:
-            templates = mw.parse(version.get("*")).filter_templates()
-        except IndexError:
+            text = _get_revision_content(version)
+            if text is None:
+                i += 1
+                continue
+            templates = mw.parse(text).filter_templates()
+        except (IndexError, TypeError):
+            i += 1
             continue
 
         rate = "NA"
@@ -124,7 +145,7 @@ async def get_text(revid, attempts=0, lang_code="en"):
             ) as resp:
                 response = await resp.json()
     # request errors from server
-    except:
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
         if attempts == 10:
             return -1
         # If there's a server error, just re-send the request until the server complies
@@ -132,8 +153,7 @@ async def get_text(revid, attempts=0, lang_code="en"):
     # Check if page was deleted (deleted pages have no text and are therefore un-parsable)
     try:
         raw_html = response["parse"]["text"]["*"]
-    # Page error (represents deleted pages)
-    except KeyError:
+    except (KeyError, TypeError):
         return None
     # Parse raw html from response
     document = html.document_fromstring(raw_html)
@@ -184,11 +204,11 @@ def get_history(title, include_text=True, domain="en.wikipedia.org"):
     try:
         site = Site(domain)
         page = site.pages[title]
-    except ConnectionError:
+    except (ConnectionError, OSError):
         return -1
     try:
         talk = site.pages["Talk:" + title]
-    except:
+    except (ConnectionError, OSError):
         return -1
     ratings = get_ratings(talk)
 
