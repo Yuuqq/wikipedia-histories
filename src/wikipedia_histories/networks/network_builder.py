@@ -61,7 +61,7 @@ def get_users(name, domain, path):
 
     if os.path.exists(fpath):
         df = pd.read_csv(fpath)
-        return list(df["User"])
+        return list(df["user"])
 
     # In case the data isn't there
     return None

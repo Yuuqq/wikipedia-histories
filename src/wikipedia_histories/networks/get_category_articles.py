@@ -26,10 +26,9 @@ def get_pages_of_cat(category, categorymembers, dict_of_cats, level=0, max_level
     dict_of_cats[category] = pages
     return dict_of_cats
 
-
 def find_articles(domains, max_level=2):
     wiki = wikipediaapi.Wikipedia(
-        user_agent="wikipedia-histories (https://github.com/ndrezn/wikipedia-histories)",
+        user_agent="wikipedia-histories/1.2.0 (https://github.com/Yuuqq/wikipedia-histories)",
         language="en",
     )
 
