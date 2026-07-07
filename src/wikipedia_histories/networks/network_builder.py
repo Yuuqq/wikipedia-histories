@@ -50,7 +50,6 @@ def get_documents(domain, size, metadata_path):
 
     return container
 
-
 def get_users(name, domain, path):
     """
     Get the list of users for an article given the dataframe
@@ -67,7 +66,6 @@ def get_users(name, domain, path):
     # In case the data isn't there
     return None
 
-
 def intersection(lst1, lst2):
     """
     Get the intersection of two lists, O(n) time
@@ -77,7 +75,6 @@ def intersection(lst1, lst2):
     temp = set(lst2)
     lst3 = [value for value in lst1 if value in temp]
     return lst3
-
 
 def build_graph(df, path):
     """
@@ -119,7 +116,6 @@ def build_graph(df, path):
 
     return g
 
-
 def generate_networks(
     count=50,
     size=100,
@@ -140,9 +136,11 @@ def generate_networks(
         g = build_graph(documents, articles_path)
 
         if write:
-            if not os.path.isdir("{}/{}/".format(output_path, domain)):
-                os.makedirs("{}/{}/".format(output_path, domain))
-            out = "{}/{}/{}.GraphML".format(output_path, domain, str(i))
+            domain_dir = domain if domain is not None else "cross_domain"
+            dir_path = "{}/{}/".format(output_path, domain_dir)
+            if not os.path.isdir(dir_path):
+                os.makedirs(dir_path)
+            out = "{}/{}/{}.GraphML".format(output_path, domain_dir, str(i))
             nx.write_graphml(g, out)
         graphs.append(g)
 

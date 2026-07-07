@@ -13,6 +13,9 @@ from requests.exceptions import ConnectionError
 from .revision import Revision
 
 
+UA = "wikipedia-histories/1.2.0 (https://github.com/Yuuqq/wikipedia-histories)"
+
+
 def _get_users(metadata):
     """
     Pull users, handles hidden user errors
@@ -142,6 +145,7 @@ async def get_text(revid, attempts=0, lang_code="en"):
             async with session.get(
                 f"https://{lang_code}.wikipedia.org/w/api.php",
                 params={"action": "parse", "format": "json", "oldid": revid,},
+                headers={"User-Agent": UA},
             ) as resp:
                 response = await resp.json()
     # request errors from server
@@ -188,7 +192,6 @@ async def get_texts(revids, lang_code="en"):
         )
     return texts
 
-
 def get_history(title, include_text=True, domain="en.wikipedia.org"):
     """
     Collects everything and returns a list of Change objects
@@ -202,7 +205,7 @@ def get_history(title, include_text=True, domain="en.wikipedia.org"):
 
     # Load the article
     try:
-        site = Site(domain)
+        site = Site(domain, user_agent=UA)
         page = site.pages[title]
     except (ConnectionError, OSError):
         return -1
@@ -260,7 +263,6 @@ def get_history(title, include_text=True, domain="en.wikipedia.org"):
 
     return history
 
-
 def to_df(changes):
     """
     Make a dataframe out of the change objects
@@ -285,7 +287,6 @@ def to_df(changes):
         )
         df.append(row)
     return pd.DataFrame(df)
-
 
 def extract_lang_code_from_domain(domain: str) -> str:
     match = re.match(r"([a-z-]+).wikipedia.org", domain)
