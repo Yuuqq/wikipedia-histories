@@ -9,13 +9,13 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="wikipedia_histories",
-    version="1.1.0",
+    version="1.2.0",
     author="Nathan Drezner",
     author_email="nathan@drezner.xyz",
     description="A Python tool to pull the complete edit history of a Wikipedia page",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/ndrezn/wikipedia-histories",
+    url="https://github.com/Yuuqq/wikipedia-histories",
     install_requires=[
         "aiohttp>=3.8.0",
         "lxml>=5.0.0",
@@ -32,5 +32,5 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     extras_require={"networks": ["networkx>=2.6", "python-igraph>=0.9.1"]},
-    python_requires=">=3.6",
+    python_requires=">=3.8",
 )
