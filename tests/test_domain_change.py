@@ -1,16 +1,20 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pandas as pd
 import pytest
 
-from src import wikipedia_histories
-from src.wikipedia_histories.get_histories import (
+from requests.exceptions import ConnectionError
+
+import wikipedia_histories
+from wikipedia_histories.get_histories import (
     _get_revision_content,
     _get_users,
     get_comment,
     get_kind,
+    sanitize_filename,
 )
-from src.wikipedia_histories.revision import Revision
+from wikipedia_histories.revision import Revision
 
 
 # --- Pure unit tests (no network needed) ---
@@ -21,53 +25,43 @@ def test_simple_extract_lang_code_from_domain() -> None:
     lang_code = wikipedia_histories.extract_lang_code_from_domain(domain)
     assert lang_code == "en"
 
-
 def test_invalid_lang_code_returns_empty_string() -> None:
     domain = "a11.wikipedia.org"
     lang_code = wikipedia_histories.extract_lang_code_from_domain(domain)
     assert lang_code == ""
-
 
 def test_complex_extract_lang_code_from_domain() -> None:
     domain = "zh-min-nan.wikipedia.org"
     lang_code = wikipedia_histories.extract_lang_code_from_domain(domain)
     assert lang_code == "zh-min-nan"
 
-
 def test_get_users_basic() -> None:
     metadata = [{"user": "Alice"}, {"user": "Bob"}]
     assert _get_users(metadata) == ["Alice", "Bob"]
-
 
 def test_get_users_hidden_user() -> None:
     metadata = [{"user": "Alice"}, {"revid": 123}]
     assert _get_users(metadata) == ["Alice", None]
 
-
 def test_get_kind_minor() -> None:
     metadata = [{"minor": ""}, {"revid": 123}]
     assert get_kind(metadata) == [True, False]
-
 
 def test_get_comment_basic() -> None:
     metadata = [{"comment": "fixed typo"}, {"revid": 123}]
     assert get_comment(metadata) == ["fixed typo", ""]
 
-
 def test_get_revision_content_old_format() -> None:
     rev = {"*": "some wikitext", "revid": 123}
     assert _get_revision_content(rev) == "some wikitext"
-
 
 def test_get_revision_content_mcr_slots_format() -> None:
     rev = {"slots": {"main": {"*": "slot wikitext"}}, "revid": 123}
     assert _get_revision_content(rev) == "slot wikitext"
 
-
 def test_get_revision_content_empty() -> None:
     rev = {"revid": 123}
     assert _get_revision_content(rev) is None
-
 
 def test_to_df() -> None:
     changes = [
@@ -80,11 +74,42 @@ def test_to_df() -> None:
     assert df.iloc[0]["user"] == "Alice"
     assert df.iloc[0]["text"] == "text"
 
-
 def test_revision_str() -> None:
     rev = Revision(0, "Test", "2021-01-01", 12345, False, "Alice", "", "NA", "content")
     assert str(rev) == "12345"
     assert repr(rev) == "12345"
+
+
+def test_sanitize_filename_basic() -> None:
+    assert sanitize_filename("Simple Title") == "Simple Title"
+    assert sanitize_filename("Title/With/Slashes") == "Title_With_Slashes"
+    assert sanitize_filename('Bad:*?"<>|Chars#[]{}') == "Bad___________Chars_"
+    assert sanitize_filename("") == "untitled"
+    assert sanitize_filename(None) == "untitled"
+    long_title = "A" * 300 + " bad*chars"
+    sanitized = sanitize_filename(long_title)
+    assert len(sanitized) <= 200
+    assert "_" in sanitized
+
+def test_get_metadata_new_columns() -> None:
+    """Test get_metadata works with the column names produced by to_df + csv roundtrip."""
+    sample_df = pd.DataFrame({
+        "title": ["Test Article"],
+        "time": ["2021-01-01 12:00:00"],
+        "revid": [100],
+        "kind": [False],
+        "user": ["Alice"],
+        "comment": [""],
+        "rating": ["stub"],
+        "text": ["This is a test article with several words to count for addition deletion logic."]
+    })
+    row = wikipedia_histories.get_metadata(sample_df, "Test Article")
+    assert row["title"] == "Test Article"
+    assert row["edit_count"] == 1
+    assert row["unique_editors"] == 1
+    assert "added_words_per_edit" in row
+    assert "deleted_words_per_edit" in row
+    assert row["article_age_hours"] is not None
 
 
 # --- Mocked network tests ---
@@ -100,7 +125,7 @@ def test_get_text_parses_html() -> None:
     }
 
     async def mock_get_text():
-        with patch("aiohttp.ClientSession") as MockSession:
+        with patch("wikipedia_histories.get_histories.aiohttp.ClientSession") as MockSession:
             mock_session = AsyncMock()
             mock_resp = AsyncMock()
             mock_resp.json = AsyncMock(return_value=mock_response)
@@ -118,12 +143,11 @@ def test_get_text_parses_html() -> None:
     text = asyncio.run(mock_get_text())
     assert text == "Hello world.Second paragraph."
 
-
 def test_get_text_deleted_page_returns_none() -> None:
     mock_response = {"error": {"code": "nosuchrevid"}}
 
     async def mock_get_text():
-        with patch("aiohttp.ClientSession") as MockSession:
+        with patch("wikipedia_histories.get_histories.aiohttp.ClientSession") as MockSession:
             mock_session = AsyncMock()
             mock_resp = AsyncMock()
             mock_resp.json = AsyncMock(return_value=mock_response)
@@ -141,7 +165,6 @@ def test_get_text_deleted_page_returns_none() -> None:
     text = asyncio.run(mock_get_text())
     assert text is None
 
-
 def test_get_history_returns_list_on_success() -> None:
     mock_metadata = [
         {
@@ -152,13 +175,13 @@ def test_get_history_returns_list_on_success() -> None:
         }
     ]
     mock_talk_revisions_ts = [
-        {"timestamp": (2021, 1, 1, 0, 0, 0, 0, 0, 0)}
+        {"timestamp": (2021, 1, 1, 0, 0, 0, 0, 0, 0, 0)}
     ]
     mock_talk_revisions_content = [
         {"*": "{{WikiProject|class=stub}}", "revid": 1}
     ]
 
-    with patch("src.wikipedia_histories.get_histories.Site") as MockSite:
+    with patch("wikipedia_histories.get_histories.Site") as MockSite:
         mock_site = MagicMock()
         mock_page = MagicMock()
         mock_talk = MagicMock()
@@ -184,10 +207,9 @@ def test_get_history_returns_list_on_success() -> None:
         assert data[0].user == "Alice"
         assert data[0].revid == 100
 
-
 def test_get_history_connection_error_returns_minus_one() -> None:
     with patch(
-        "src.wikipedia_histories.get_histories.Site",
+        "wikipedia_histories.get_histories.Site",
         side_effect=ConnectionError("test"),
     ):
         data = wikipedia_histories.get_history("Test", include_text=False)

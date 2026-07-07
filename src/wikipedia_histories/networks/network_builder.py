@@ -13,6 +13,9 @@ import os
 import pandas as pd
 import networkx as nx
 
+# Import sanitize from parent package (centralized)
+from ..get_histories import sanitize_filename
+
 
 def get_documents(domain, size, metadata_path):
     """
@@ -57,7 +60,8 @@ def get_users(name, domain, path):
     :param name: the name of an article
     :param domain: the domain the article is a member of
     """
-    fpath = "{}/{}/{}.csv".format(path, domain, name)
+    safe_name = sanitize_filename(name)
+    fpath = "{}/{}/{}.csv".format(path, domain, safe_name)
 
     if os.path.exists(fpath):
         df = pd.read_csv(fpath)

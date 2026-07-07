@@ -35,18 +35,18 @@ def download_articles(df, output_path):
     Download a list of articles based on the find_articles function
     """
     for page, domain in zip(df["Pages"], df["Domain"]):
-        df = get_article(page)
+        article_df = get_article(page)
         # If there was an error in collecting the DataFrame
-        if df == -1:
+        if article_df == -1:
             continue
         domain_output = "{}/{}".format(output_path, domain)
         if not os.path.isdir(domain_output):
             os.makedirs(domain_output)
 
-        df.to_csv("{}/{}.csv".format(domain_output, page))
+        safe_name = wikipedia_histories.sanitize_filename(page)
+        article_df.to_csv("{}/{}.csv".format(domain_output, safe_name))
 
     return 1
-
 
 def aggregate_metadata(mediums, files_path):
     """
@@ -58,11 +58,12 @@ def aggregate_metadata(mediums, files_path):
         files = os.listdir(directory)
 
         for file in files:
-            page = pd.read_csv(directory + file)
-
             try:
-                row = wikipedia_histories.get_metadata(page, file.split(".")[0])
-            except:
+                page_df = pd.read_csv(directory + file)
+                # Prefer actual title from inside the CSV if available
+                title = page_df.iloc[0]["title"] if not page_df.empty and "title" in page_df.columns else file.rsplit(".", 1)[0]
+                row = wikipedia_histories.get_metadata(page_df, title)
+            except Exception:
                 continue
             row["medium"] = medium
             df.append(row)

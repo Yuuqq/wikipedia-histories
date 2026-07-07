@@ -293,3 +293,21 @@ def extract_lang_code_from_domain(domain: str) -> str:
     if match:
         return match.group(1)
     return ""
+
+def sanitize_filename(title: str) -> str:
+    """Sanitize a Wikipedia page title to a safe cross-platform filename.
+
+    Replaces characters that are invalid or problematic on filesystems
+    (/, \, :, *, ?, ", <, >, |, #, [], {}) with underscores.
+    Collapses repeated underscores, trims, and limits length to ~200 chars.
+    """
+    if not title or not isinstance(title, str):
+        return "untitled"
+    # Replace filesystem-unsafe chars (Wikipedia titles can contain some of these)
+    safe = re.sub(r'[\\/:*?"<>|#{}\[\]]', '_', title)
+    # Collapse multiple underscores and trim
+    safe = re.sub(r'_+', '_', safe).strip('_')
+    # Limit length for filesystem safety (most FS have 255 byte limit)
+    if len(safe) > 200:
+        safe = safe[:200].rstrip('_')
+    return safe if safe else "untitled"
