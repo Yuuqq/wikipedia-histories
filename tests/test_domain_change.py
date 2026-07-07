@@ -83,7 +83,7 @@ def test_revision_str() -> None:
 def test_sanitize_filename_basic() -> None:
     assert sanitize_filename("Simple Title") == "Simple Title"
     assert sanitize_filename("Title/With/Slashes") == "Title_With_Slashes"
-    assert sanitize_filename('Bad:*?"<>|Chars#[]{}') == "Bad___________Chars_"
+    assert sanitize_filename('Bad:*?"<>|Chars#[]{}') == "Bad_Chars_"
     assert sanitize_filename("") == "untitled"
     assert sanitize_filename(None) == "untitled"
     long_title = "A" * 300 + " bad*chars"
