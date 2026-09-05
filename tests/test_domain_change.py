@@ -8,6 +8,7 @@ from requests.exceptions import ConnectionError
 
 import wikipedia_histories
 from wikipedia_histories.get_histories import (
+    UA,
     _get_revision_content,
     _get_users,
     get_comment,
@@ -141,7 +142,7 @@ def test_get_text_parses_html() -> None:
             return result
 
     text = asyncio.run(mock_get_text())
-    assert text == "Hello world.Second paragraph."
+    assert text == "Hello world.\nSecond paragraph."
 
 def test_get_text_deleted_page_returns_none() -> None:
     mock_response = {"error": {"code": "nosuchrevid"}}
@@ -206,6 +207,7 @@ def test_get_history_returns_list_on_success() -> None:
         assert data[0].title == "Test Article"
         assert data[0].user == "Alice"
         assert data[0].revid == 100
+        assert MockSite.call_args.kwargs["clients_useragent"] == UA
 
 def test_get_history_connection_error_returns_minus_one() -> None:
     with patch(

@@ -5,6 +5,7 @@ from .get_histories import (
     get_texts,
     extract_lang_code_from_domain,
     sanitize_filename,
+    filename_for_title,
 )
 
 from .retrieve_metadata import get_metadata

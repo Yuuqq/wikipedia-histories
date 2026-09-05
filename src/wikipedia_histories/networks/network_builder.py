@@ -7,14 +7,16 @@ both articles.
 for instance, if three total users edited both "The Dark Knight" and "Game of Thrones", then there is an
 edge between those two nodes with a weight of three.
 """
-import random
 import os
+import random
+from itertools import combinations
+from numbers import Integral
 
 import pandas as pd
 import networkx as nx
 
 # Import sanitize from parent package (centralized)
-from ..get_histories import sanitize_filename
+from ..get_histories import filename_for_title, sanitize_filename
 
 
 def get_documents(domain, size, metadata_path):
@@ -25,33 +27,63 @@ def get_documents(domain, size, metadata_path):
     :param metadata_path: The path to the metadata sheet
     """
 
+    if not isinstance(size, Integral) or size <= 0 or size % 2:
+        raise ValueError("size must be a positive even integer")
+    if metadata_path is None:
+        raise ValueError("metadata_path is required")
+
     df = pd.read_csv(metadata_path)
+    required_columns = {"Domain", "Category", "Pages"}
+    missing_columns = required_columns.difference(df.columns)
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        raise ValueError(f"Metadata is missing required columns: {missing}")
+
+    per_category = size // 2
 
     # pick two random submediums from which to draw documents if we're picking from all
     # (e.g. ('democrat', 'biology') or ('republican', 'democrat'))
     if domain is not None:
         df = df.loc[df["Domain"] == domain]
-        selected_categories = random.sample(df["Category"].unique().tolist(), 2)
+        categories = df["Category"].dropna().unique().tolist()
+        if len(categories) < 2:
+            raise ValueError(f"Domain {domain!r} must contain at least two categories")
+        selected_categories = random.sample(categories, 2)
+        selections = [(domain, category) for category in selected_categories]
 
     else:
         # Select two categories from different domains
-        domains = random.sample(df["Domain"].unique().tolist(), 2)
-        df = df.loc[df["Domain"].isin(domains)]
+        available_domains = df["Domain"].dropna().unique().tolist()
+        if len(available_domains) < 2:
+            raise ValueError("Metadata must contain at least two domains")
+        selected_domains = random.sample(available_domains, 2)
 
-        dff = df.groupby("Domain")
-        selected_categories = []
-        for name, group in dff:
-            cat = random.choice(group["Category"].unique().tolist())
-            selected_categories.append(cat)
+        selections = []
+        for selected_domain in selected_domains:
+            categories = (
+                df.loc[df["Domain"] == selected_domain, "Category"]
+                .dropna()
+                .unique()
+                .tolist()
+            )
+            if not categories:
+                raise ValueError(f"Domain {selected_domain!r} has no categories")
+            selections.append((selected_domain, random.choice(categories)))
 
     # clear out rows of the dataframe which don't match the selected types
-    container = pd.DataFrame()
-    for c in selected_categories:
-        cur = df.loc[df["Category"] == c]
-        cur = cur.sample(n=int(size / 2))
-        container = pd.concat([container, cur])
+    selected_frames = []
+    for selected_domain, category in selections:
+        cur = df.loc[
+            (df["Domain"] == selected_domain) & (df["Category"] == category)
+        ]
+        if len(cur) < per_category:
+            raise ValueError(
+                f"Category {category!r} in domain {selected_domain!r} has only "
+                f"{len(cur)} article(s); {per_category} required"
+            )
+        selected_frames.append(cur.sample(n=per_category))
 
-    return container
+    return pd.concat(selected_frames, ignore_index=True)
 
 def get_users(name, domain, path):
     """
@@ -60,12 +92,18 @@ def get_users(name, domain, path):
     :param name: the name of an article
     :param domain: the domain the article is a member of
     """
-    safe_name = sanitize_filename(name)
-    fpath = "{}/{}/{}.csv".format(path, domain, safe_name)
+    if path is None:
+        return None
 
-    if os.path.exists(fpath):
+    safe_names = [filename_for_title(name), sanitize_filename(name)]
+    for safe_name in dict.fromkeys(safe_names):
+        fpath = os.path.join(path, str(domain), f"{safe_name}.csv")
+        if not os.path.exists(fpath):
+            continue
         df = pd.read_csv(fpath)
-        return list(df["user"])
+        if "user" not in df.columns:
+            return None
+        return [user for user in df["user"].tolist() if _is_valid_user(user)]
 
     # In case the data isn't there
     return None
@@ -75,10 +113,28 @@ def intersection(lst1, lst2):
     Get the intersection of two lists, O(n) time
     """
 
-    # Use of hybrid method
-    temp = set(lst2)
-    lst3 = [value for value in lst1 if value in temp]
-    return lst3
+    if not lst1 or not lst2:
+        return []
+
+    second = {value for value in lst2 if _is_valid_user(value)}
+    result = []
+    seen = set()
+    for value in lst1:
+        if _is_valid_user(value) and value in second and value not in seen:
+            result.append(value)
+            seen.add(value)
+    return result
+
+
+def _is_valid_user(value):
+    if value is None:
+        return False
+    if isinstance(value, str) and not value.strip():
+        return False
+    try:
+        return not bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return True
 
 def build_graph(df, path):
     """
@@ -86,11 +142,19 @@ def build_graph(df, path):
 
     :param df: A dataframe of selected articles (equal numbers from each domain)
     """
+    required_columns = {"Pages", "Domain", "Category"}
+    missing_columns = required_columns.difference(df.columns)
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        raise ValueError(f"Document data is missing required columns: {missing}")
+
+    df = df.loc[:, ["Pages", "Domain", "Category"]].copy()
     df["Users"] = df.apply(
         lambda row: get_users(row["Pages"], row["Domain"], path), axis=1
     )  # get the user lists for each page
 
     df = df.dropna(subset=["Users"])
+    df = df.drop_duplicates(subset=["Pages"], keep="first")
 
     g = nx.Graph()
     # one node for every novel/film/tv
@@ -102,21 +166,14 @@ def build_graph(df, path):
 
     nx.set_node_attributes(g, attrs)
 
-    for i1, row1 in df.iterrows():  # iterate through all nodes and user lists
+    for (_, row1), (_, row2) in combinations(df.iterrows(), 2):
         node1 = row1["Pages"]
         users1 = row1["Users"]
-        for i2, row2 in df.iterrows():  # iterate through all other nodes and user lists
-            node2 = row2["Pages"]
-            if node1 != node2:
-                users2 = row2["Users"]
-                if not g.has_edge(
-                    node1, node2
-                ):  # if there is not an edge between the two nodes
-                    common_users = intersection(users1, users2)  # get the common users
-                    if len(common_users) != 0:
-                        g.add_edge(
-                            node1, node2, weight=len(common_users)
-                        )  # add an edge to the network with a weight of the common users
+        node2 = row2["Pages"]
+        users2 = row2["Users"]
+        common_users = intersection(users1, users2)
+        if common_users:
+            g.add_edge(node1, node2, weight=len(common_users))
 
     return g
 
@@ -134,6 +191,15 @@ def generate_networks(
 
     :param count: The number of articles to be referenced
     """
+    if not isinstance(count, Integral) or count < 0:
+        raise ValueError("count must be a non-negative integer")
+    if count == 0:
+        return []
+    if metadata_path is None or articles_path is None:
+        raise ValueError("metadata_path and articles_path are required")
+    if write and output_path is None:
+        raise ValueError("output_path is required when write=True")
+
     graphs = []
     for i in range(0, count):
         documents = get_documents(domain, size, metadata_path)
@@ -141,10 +207,9 @@ def generate_networks(
 
         if write:
             domain_dir = domain if domain is not None else "cross_domain"
-            dir_path = "{}/{}/".format(output_path, domain_dir)
-            if not os.path.isdir(dir_path):
-                os.makedirs(dir_path)
-            out = "{}/{}/{}.GraphML".format(output_path, domain_dir, str(i))
+            dir_path = os.path.join(output_path, domain_dir)
+            os.makedirs(dir_path, exist_ok=True)
+            out = os.path.join(dir_path, f"{i}.GraphML")
             nx.write_graphml(g, out)
         graphs.append(g)
 
