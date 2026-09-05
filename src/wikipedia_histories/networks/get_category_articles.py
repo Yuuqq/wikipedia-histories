@@ -6,27 +6,44 @@ import pandas as pd
 import wikipediaapi
 
 
-def get_pages_of_cat(category, categorymembers, dict_of_cats, level=0, max_level=2):
+def get_pages_of_cat(
+    category, categorymembers, dict_of_cats, level=0, max_level=2, _visited=None
+):
+    if dict_of_cats is None:
+        dict_of_cats = {}
+    if _visited is None:
+        _visited = set()
+    if category in _visited:
+        return dict_of_cats
+    _visited.add(category)
+
     pages = []
 
     for c in categorymembers.values():
-        if c.ns == wikipediaapi.Namespace.CATEGORY and level < max_level:
-            dict_of_cats = get_pages_of_cat(
-                c.title,
-                c.categorymembers,
-                dict_of_cats=dict_of_cats,
-                level=level + 1,
-                max_level=max_level,
-            )
-        if "Category:" in c.title:
+        if c.ns == wikipediaapi.Namespace.CATEGORY:
+            if level < max_level:
+                dict_of_cats = get_pages_of_cat(
+                    c.title,
+                    c.categorymembers,
+                    dict_of_cats=dict_of_cats,
+                    level=level + 1,
+                    max_level=max_level,
+                    _visited=_visited,
+                )
             continue
-        else:
-            pages.append((c.title, level))
+        pages.append((c.title, level))
 
     dict_of_cats[category] = pages
     return dict_of_cats
 
 def find_articles(domains, max_level=2):
+    if max_level < 0:
+        raise ValueError("max_level must be non-negative")
+
+    columns = ["Pages", "Level", "Subcategory", "Category", "Domain"]
+    if not domains or not any(domains.values()):
+        return pd.DataFrame(columns=columns)
+
     wiki = wikipediaapi.Wikipedia(
         user_agent="wikipedia-histories/1.2.0 (https://github.com/Yuuqq/wikipedia-histories)",
         language="en",
@@ -46,8 +63,12 @@ def find_articles(domains, max_level=2):
                 cur_df["Category"] = category
                 cur_df["Domain"] = domain
 
-                dfs.append(cur_df)
+                if not cur_df.empty:
+                    dfs.append(cur_df)
 
-    full_df = pd.concat(dfs)
+    if not dfs:
+        return pd.DataFrame(columns=columns)
+
+    full_df = pd.concat(dfs, ignore_index=True)
 
     return full_df

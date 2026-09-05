@@ -37,13 +37,13 @@ def download_articles(df, output_path):
     for page, domain in zip(df["Pages"], df["Domain"]):
         article_df = get_article(page)
         # If there was an error in collecting the DataFrame
-        if article_df == -1:
+        if isinstance(article_df, int) and article_df == -1:
             continue
         domain_output = "{}/{}".format(output_path, domain)
         if not os.path.isdir(domain_output):
             os.makedirs(domain_output)
 
-        safe_name = wikipedia_histories.sanitize_filename(page)
+        safe_name = wikipedia_histories.filename_for_title(page)
         article_df.to_csv("{}/{}.csv".format(domain_output, safe_name))
 
     return 1
