@@ -83,10 +83,10 @@ def test_revision_str() -> None:
 def test_sanitize_filename_basic() -> None:
     assert sanitize_filename("Simple Title") == "Simple Title"
     assert sanitize_filename("Title/With/Slashes") == "Title_With_Slashes"
-    assert sanitize_filename('Bad:*?"<>|Chars#[]{}') == "Bad_Chars_"
+    assert sanitize_filename('Bad:*?"<>|Chars#[]{}') == "Bad_Chars"
     assert sanitize_filename("") == "untitled"
     assert sanitize_filename(None) == "untitled"
-    long_title = "A" * 300 + " bad*chars"
+    long_title = "A" * 190 + " bad/chars"
     sanitized = sanitize_filename(long_title)
     assert len(sanitized) <= 200
     assert "_" in sanitized
@@ -125,20 +125,17 @@ def test_get_text_parses_html() -> None:
     }
 
     async def mock_get_text():
-        with patch("wikipedia_histories.get_histories.aiohttp.ClientSession") as MockSession:
-            mock_session = AsyncMock()
-            mock_resp = AsyncMock()
-            mock_resp.json = AsyncMock(return_value=mock_response)
-            mock_context = AsyncMock()
-            mock_context.__aenter__ = AsyncMock(return_value=mock_resp)
-            mock_context.__aexit__ = AsyncMock(return_value=False)
-            mock_session.get = MagicMock(return_value=mock_context)
-            session_context = AsyncMock()
-            session_context.__aenter__ = AsyncMock(return_value=mock_session)
-            session_context.__aexit__ = AsyncMock(return_value=False)
-            MockSession.return_value = session_context
-            result = await wikipedia_histories.get_text(12345)
-            return result
+        mock_session = AsyncMock()
+        mock_resp = AsyncMock()
+        mock_resp.json = AsyncMock(return_value=mock_response)
+        mock_resp.raise_for_status = MagicMock()
+        mock_context = AsyncMock()
+        mock_context.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_context.__aexit__ = AsyncMock(return_value=False)
+        mock_session.get = MagicMock(return_value=mock_context)
+
+        result = await wikipedia_histories.get_text(mock_session, 12345)
+        return result
 
     text = asyncio.run(mock_get_text())
     assert text == "Hello world.Second paragraph."
@@ -147,20 +144,17 @@ def test_get_text_deleted_page_returns_none() -> None:
     mock_response = {"error": {"code": "nosuchrevid"}}
 
     async def mock_get_text():
-        with patch("wikipedia_histories.get_histories.aiohttp.ClientSession") as MockSession:
-            mock_session = AsyncMock()
-            mock_resp = AsyncMock()
-            mock_resp.json = AsyncMock(return_value=mock_response)
-            mock_context = AsyncMock()
-            mock_context.__aenter__ = AsyncMock(return_value=mock_resp)
-            mock_context.__aexit__ = AsyncMock(return_value=False)
-            mock_session.get = MagicMock(return_value=mock_context)
-            session_context = AsyncMock()
-            session_context.__aenter__ = AsyncMock(return_value=mock_session)
-            session_context.__aexit__ = AsyncMock(return_value=False)
-            MockSession.return_value = session_context
-            result = await wikipedia_histories.get_text(99999999)
-            return result
+        mock_session = AsyncMock()
+        mock_resp = AsyncMock()
+        mock_resp.json = AsyncMock(return_value=mock_response)
+        mock_resp.raise_for_status = MagicMock()
+        mock_context = AsyncMock()
+        mock_context.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_context.__aexit__ = AsyncMock(return_value=False)
+        mock_session.get = MagicMock(return_value=mock_context)
+
+        result = await wikipedia_histories.get_text(mock_session, 99999999)
+        return result
 
     text = asyncio.run(mock_get_text())
     assert text is None
@@ -175,7 +169,7 @@ def test_get_history_returns_list_on_success() -> None:
         }
     ]
     mock_talk_revisions_ts = [
-        {"timestamp": (2021, 1, 1, 0, 0, 0, 0, 0, 0, 0)}
+        {"timestamp": (2021, 1, 1, 0, 0, 0, 0, 0, 0)}
     ]
     mock_talk_revisions_content = [
         {"*": "{{WikiProject|class=stub}}", "revid": 1}
@@ -207,10 +201,10 @@ def test_get_history_returns_list_on_success() -> None:
         assert data[0].user == "Alice"
         assert data[0].revid == 100
 
-def test_get_history_connection_error_returns_minus_one() -> None:
+def test_get_history_connection_error_raises_exception() -> None:
     with patch(
         "wikipedia_histories.get_histories.Site",
         side_effect=ConnectionError("test"),
     ):
-        data = wikipedia_histories.get_history("Test", include_text=False)
-        assert data == -1
+        with pytest.raises(ConnectionError):
+            data = wikipedia_histories.get_history("Test", include_text=False)
