@@ -97,7 +97,7 @@ def get_ratings(talk):
 
     prev = None
     for cur in talk.revisions(prop="content"):
-        if cur.__len__() == 1:
+        if len(cur) == 1:
             content.append(prev)
         else:
             content.append(cur)
@@ -132,28 +132,31 @@ def get_ratings(talk):
     return ratings
 
 
-async def get_text(revid, attempts=0, lang_code="en"):
+async def get_text(session, revid, attempts=0, lang_code="en"):
     """
     Pull plain text representation of a revision from API
     Parameters:
+        session: aiohttp.ClientSession
         revid: revision id of a page
         attempts: The number of attempts at retrieving the id so far
     """
     try:
         # async implementation of requests get
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"https://{lang_code}.wikipedia.org/w/api.php",
-                params={"action": "parse", "format": "json", "oldid": revid,},
-                headers={"User-Agent": UA},
-            ) as resp:
-                response = await resp.json()
+        async with session.get(
+            f"https://{lang_code}.wikipedia.org/w/api.php",
+            params={"action": "parse", "format": "json", "oldid": revid,},
+            headers={"User-Agent": UA},
+            timeout=30,
+        ) as resp:
+            resp.raise_for_status()
+            response = await resp.json()
     # request errors from server
     except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
         if attempts == 10:
-            return -1
+            raise ConnectionError(f"Failed to fetch revid {revid} after 10 attempts")
         # If there's a server error, just re-send the request until the server complies
-        return await get_text(revid, attempts=attempts + 1, lang_code=lang_code)
+        await asyncio.sleep(2 ** attempts)
+        return await get_text(session, revid, attempts=attempts + 1, lang_code=lang_code)
     # Check if page was deleted (deleted pages have no text and are therefore un-parsable)
     try:
         raw_html = response["parse"]["text"]["*"]
@@ -186,33 +189,22 @@ async def get_texts(revids, lang_code="en"):
 
     # Gather body content of all revisions (asynchronously)
     sema = 100
-    for i in range(0, revids.__len__(), +sema):
-        texts += await asyncio.gather(
-            *(get_text(revid, lang_code=lang_code) for revid in revids[i : (i + sema)])
-        )
+    async with aiohttp.ClientSession() as session:
+        for i in range(0, len(revids), +sema):
+            texts += await asyncio.gather(
+                *(get_text(session, revid, lang_code=lang_code) for revid in revids[i : (i + sema)])
+            )
     return texts
 
-def get_history(title, include_text=True, domain="en.wikipedia.org"):
+async def get_history_async(title, include_text=True, domain="en.wikipedia.org"):
     """
+    Asynchronous version of get_history.
     Collects everything and returns a list of Change objects
-
-    Parameters:
-        title: article title
-        include_text: Whether to unclude body text or not. Speed increases if False
-    Returns:
-        A list of Change objects representing each revision to the
     """
+    site = Site(domain, user_agent=UA)
+    page = site.pages[title]
+    talk = site.pages["Talk:" + title]
 
-    # Load the article
-    try:
-        site = Site(domain, user_agent=UA)
-        page = site.pages[title]
-    except (ConnectionError, OSError):
-        return -1
-    try:
-        talk = site.pages["Talk:" + title]
-    except (ConnectionError, OSError):
-        return -1
     ratings = get_ratings(talk)
 
     # Collect metadata information
@@ -224,19 +216,19 @@ def get_history(title, include_text=True, domain="en.wikipedia.org"):
     revids = []
 
     # Collect list of revision ids using the metadata pull
-    for i in range(0, metadata.__len__()):
+    for i in range(0, len(metadata)):
         revids.append(metadata[i]["revid"])
 
     # Get the text of the revisions. Performance is improved if this isn't done, but you lose the revisions
     if include_text:
         lang_code = extract_lang_code_from_domain(domain)
-        texts = asyncio.run(get_texts(revids, lang_code))
+        texts = await get_texts(revids, lang_code)
     else:
         texts = [""] * len(metadata)
 
     # Iterate backwards through our metadata and put together the list of change items
     history = []
-    for i in range(metadata.__len__() - 1, -1, -1):
+    for i in range(len(metadata) - 1, -1, -1):
         # Iterate against talk page editions
         time = datetime.fromtimestamp(mktime(metadata[i]["timestamp"]))
         rating = "NA"
@@ -262,6 +254,20 @@ def get_history(title, include_text=True, domain="en.wikipedia.org"):
         history.append(change)
 
     return history
+
+
+def get_history(title, include_text=True, domain="en.wikipedia.org"):
+    """
+    Collects everything and returns a list of Change objects
+
+    Parameters:
+        title: article title
+        include_text: Whether to unclude body text or not. Speed increases if False
+    Returns:
+        A list of Change objects representing each revision to the
+    """
+    return asyncio.run(get_history_async(title, include_text, domain))
+
 
 def to_df(changes):
     """
@@ -298,7 +304,7 @@ def sanitize_filename(title: str) -> str:
     """Sanitize a Wikipedia page title to a safe cross-platform filename.
 
     Replaces characters that are invalid or problematic on filesystems
-    (/, \, :, *, ?, ", <, >, |, #, [], {}) with underscores.
+    (/, \\, :, *, ?, ", <, >, |, #, [], {}) with underscores.
     Collapses repeated underscores, trims, and limits length to ~200 chars.
     """
     if not title or not isinstance(title, str):

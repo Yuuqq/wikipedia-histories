@@ -31,11 +31,19 @@ def get_documents(domain, size, metadata_path):
     # (e.g. ('democrat', 'biology') or ('republican', 'democrat'))
     if domain is not None:
         df = df.loc[df["Domain"] == domain]
-        selected_categories = random.sample(df["Category"].unique().tolist(), 2)
+        unique_categories = df["Category"].unique().tolist()
+        sample_size = min(2, len(unique_categories))
+        if sample_size == 0:
+            return pd.DataFrame()
+        selected_categories = random.sample(unique_categories, sample_size)
 
     else:
         # Select two categories from different domains
-        domains = random.sample(df["Domain"].unique().tolist(), 2)
+        unique_domains = df["Domain"].unique().tolist()
+        sample_size = min(2, len(unique_domains))
+        if sample_size == 0:
+            return pd.DataFrame()
+        domains = random.sample(unique_domains, sample_size)
         df = df.loc[df["Domain"].isin(domains)]
 
         dff = df.groupby("Domain")
@@ -48,7 +56,9 @@ def get_documents(domain, size, metadata_path):
     container = pd.DataFrame()
     for c in selected_categories:
         cur = df.loc[df["Category"] == c]
-        cur = cur.sample(n=int(size / 2))
+        sample_n = min(int(size / 2), len(cur))
+        if sample_n > 0:
+            cur = cur.sample(n=sample_n)
         container = pd.concat([container, cur])
 
     return container
@@ -61,7 +71,8 @@ def get_users(name, domain, path):
     :param domain: the domain the article is a member of
     """
     safe_name = sanitize_filename(name)
-    fpath = "{}/{}/{}.csv".format(path, domain, safe_name)
+    safe_domain = os.path.basename(domain) if domain else ""
+    fpath = "{}/{}/{}.csv".format(path, safe_domain, safe_name)
 
     if os.path.exists(fpath):
         df = pd.read_csv(fpath)
@@ -86,6 +97,9 @@ def build_graph(df, path):
 
     :param df: A dataframe of selected articles (equal numbers from each domain)
     """
+    if df.empty:
+        return nx.Graph()
+
     df["Users"] = df.apply(
         lambda row: get_users(row["Pages"], row["Domain"], path), axis=1
     )  # get the user lists for each page
@@ -135,16 +149,17 @@ def generate_networks(
     :param count: The number of articles to be referenced
     """
     graphs = []
+    safe_domain = os.path.basename(domain) if domain else "cross_domain"
+
     for i in range(0, count):
         documents = get_documents(domain, size, metadata_path)
         g = build_graph(documents, articles_path)
 
         if write:
-            domain_dir = domain if domain is not None else "cross_domain"
-            dir_path = "{}/{}/".format(output_path, domain_dir)
+            dir_path = "{}/{}/".format(output_path, safe_domain)
             if not os.path.isdir(dir_path):
                 os.makedirs(dir_path)
-            out = "{}/{}/{}.GraphML".format(output_path, domain_dir, str(i))
+            out = "{}/{}/{}.GraphML".format(output_path, safe_domain, str(i))
             nx.write_graphml(g, out)
         graphs.append(g)
 
